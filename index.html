@@ -1245,14 +1245,37 @@
             printMovementTicket(mov);
             alert('Movimiento y/o comprobante registrado e impreso con éxito.');
         }
+function calculateCashExpected() {
+    const efectivoVentas = activeShift.sales
+        .filter(s => s.method === 'efectivo')
+        .reduce((acc, s) => acc + Number(s.total || 0), 0);
 
+    // Solo las devoluciones pagadas en efectivo afectan el cajón.
+    const devolucionesEfectivo = activeShift.returns
+        .filter(r => r.method === 'efectivo')
+        .reduce((acc, r) => acc + Number(r.total || 0), 0);
+
+    const entradas = activeShift.cashMovements
+        .filter(m => m.type === 'entrada')
+        .reduce((acc, m) => acc + Number(m.amount || 0), 0);
+
+    const retiros = activeShift.cashMovements
+        .filter(m => m.type === 'retiro')
+        .reduce((acc, m) => acc + Number(m.amount || 0), 0);
+
+    return Number(activeShift.fondoInicial || 0)
+        + efectivoVentas
+        - devolucionesEfectivo
+        + entradas
+        - retiros;
+}
         function openCloseRegisterModal() {
             const efectivoVentas = activeShift.sales.filter(s => s.method === 'efectivo').reduce((acc, s) => acc + s.total, 0);
             const tarjetaVentas = activeShift.sales.filter(s => s.method === 'tarjeta').reduce((acc, s) => acc + s.total, 0);
-            const totalDevoluciones = activeShift.returns.reduce((acc, r) => acc + r.total, 0);
-            const entradas = activeShift.cashMovements.filter(m => m.type === 'entrada').reduce((acc, m) => acc + m.amount, 0);
-            const retiros = activeShift.cashMovements.filter(m => m.type === 'retiro').reduce((acc, m) => acc + m.amount, 0);
-            const teorico = activeShift.fondoInicial + efectivoVentas - totalDevoluciones + entradas - retiros;
+           const totalDevoluciones = activeShift.returns
+    .reduce((acc, r) => acc + Number(r.total || 0), 0);
+
+const teorico = calculateCashExpected();
 
             document.getElementById('cr-fondo').innerText = `$${activeShift.fondoInicial.toFixed(2)}`;
             document.getElementById('cr-ventas').innerText = `$${efectivoVentas.toFixed(2)}`;
@@ -1291,9 +1314,9 @@
                 efectivoVentas,
                 tarjetaVentas,
                 devoluciones: totalDevoluciones,
-                teorico: window.teoricoCaja,
-                contado: counted,
-                diferencia: counted - window.teoricoCaja
+                teorico: calculateCashExpected(),
+contado: counted,
+diferencia: counted - calculateCashExpected()
             };
 
             state.cuts.unshift(cutRecord);
@@ -1329,7 +1352,7 @@
             const entradas = activeShift.cashMovements.filter(m => m.type === 'entrada').reduce((acc, m) => acc + m.amount, 0);
             const retiros = activeShift.cashMovements.filter(m => m.type === 'retiro').reduce((acc, m) => acc + m.amount, 0);
             const devoluciones = activeShift.returns.reduce((acc, r) => acc + r.total, 0);
-            const efectivoCaja = activeShift.fondoInicial + cashSales - devoluciones + entradas - retiros;
+            const efectivoCaja = calculateCashExpected();
 
             document.getElementById('rep-total-sales').innerText = `$${totalSales.toFixed(2)}`;
             document.getElementById('rep-total-trans').innerText = activeShift.sales.length;
