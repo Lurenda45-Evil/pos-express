@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiPos Express - POS & Backoffice</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- JsBarcode para códigos de barras -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans antialiased text-gray-900 h-screen flex flex-col overflow-hidden">
+
+    <!-- ========================================== -->
+    <!-- PANTALLA DE LOGIN Y APERTURA DE TURNO       -->
+    <!-- ========================================== -->
+    <div id="auth-screen" class="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-6">
+            <div class="text-center">
+                <div class="bg-blue-600 text-white p-3 rounded-full inline-block mb-2">
+                    <i data-lucide="shield-check" class="w-8 h-8"></i>
+                </div>
+                <h2 id="login-business-title" class="text-2xl font-bold text-gray-800">MiPos Express</h2>
+                <p class="text-sm text-gray-500">Ingrese sus credenciales para abrir o continuar turno</p>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Número de Operador</label>
+                    <input type="number" id="login-op-id" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value="101" placeholder="Ej. 101">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">NIP / Clave</label>
+                    <input type="password" id="login-op-pin" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value="1234" placeholder="****">
+                </div>
+                <div id="fondo-container">
+                    <label class="block text-sm font-medium text-gray-700">Fondo Inicial de Caja ($)</label>
+                    <input type="number" step="0.01" id="login-cash-drawer" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-lg text-green-600" placeholder="0.00" value="500.00">
+                </div>
+
+                <button onclick="loginAndOpenDrawer()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200 shadow-md">
+                    ACCEDER AL SISTEMA
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- APLICACIÓN PRINCIPAL (CONTENEDOR DE VISTAS)  -->
+    <!-- ========================================== -->
+    <div id="main-app" class="hidden flex flex-col h-full">
+        <!-- HEADER GENERAL ADAPTABLE A MÓVIL -->
+        <header class="bg-blue-600 text-white shadow-md px-3 py-2.5 flex flex-col sm:flex-row justify-between items-center gap-2 flex-shrink-0">
+            <div class="flex items-center justify-between w-full sm:w-auto">
+                <div class="flex items-center space-x-2">
+                    <div id="header-logo-container" class="w-8 h-8 bg-white rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                        <i data-lucide="store" class="w-5 h-5 text-blue-600"></i>
+                    </div>
+                    <h1 id="header-business-name" class="text-base sm:text-lg font-bold tracking-wide truncate">MiPos</h1>
+                </div>
+            </div>
+            
+            <div class="flex flex-wrap items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
+                <div class="text-left sm:text-right text-[11px] sm:text-xs">
+                    <p id="header-op-name" class="font-semibold truncate">Op: -</p>
+                    <p class="text-blue-200">Rol: <span id="header-op-role">-</span> | Fondo: $<span id="header-fondo">0.00</span></p>
+                </div>
+                
+                <div class="flex space-x-1">
+                    <button onclick="switchMainView('pos')" id="btn-view-pos" class="bg-blue-700 hover:bg-blue-800 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center space-x-1">
+                        <i data-lucide="shopping-cart" class="w-3.5 h-3.5"></i><span>POS</span>
+                    </button>
+                    <button onclick="switchMainView('backoffice')" id="btn-view-backoffice" class="bg-blue-800 hover:bg-blue-900 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center space-x-1">
+                        <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i><span>Backoffice</span>
+                    </button>
+                    <button onclick="logout()" class="bg-red-600 hover:bg-red-700 p-1.5 rounded-lg text-xs font-medium transition flex items-center justify-center" title="Cerrar Sesión">
+                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- ========================================== -->
+        <!-- VISTA 1: PUNTO DE VENTA (POS MÓVIL)         -->
+        <!-- ========================================== -->
+        <div id="view-pos" class="flex-1 flex flex-col p-2 sm:p-3 bg-gray-50 overflow-hidden">
+            <div class="grid grid-cols-1 gap-2 sm:gap-3 h-full">
+                <div class="flex flex-col h-full space-y-2 sm:space-y-3">
+                    <div id="pos-display-header" class="bg-blue-900 text-white p-2.5 sm:p-3 rounded-xl shadow-sm flex justify-between items-center flex-shrink-0">
+                        <span id="pos-display-title" class="text-xs uppercase tracking-wider text-blue-300 font-semibold">Total a Pagar</span>
+                        <span id="display-total" class="text-2xl sm:text-3xl font-extrabold">$0.00</span>
+                    </div>
+
+                    <!-- Escáner y Búsqueda -->
+                    <div class="bg-white p-2.5 sm:p-3 rounded-xl shadow-sm border flex items-center space-x-2 flex-shrink-0">
+                        <i data-lucide="barcode" class="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 flex-shrink-0"></i>
+                        <input type="text" id="barcode-input" autofocus onkeypress="handleBarcode(event)" class="w-full text-sm sm:text-base p-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Escanear código o folio de ticket...">
+                        <button onclick="openSearchModal()" class="bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-lg text-xs font-medium border text-gray-700 whitespace-nowrap">Buscar</button>
+                    </div>
+
+                    <!-- Tabla de Artículos Escaneados -->
+                    <div class="flex-1 bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col">
+                        <div class="bg-gray-100 px-3 py-2 border-b font-semibold text-xs text-gray-700 grid grid-cols-12 gap-1 flex-shrink-0">
+                            <div class="col-span-5">Artículo</div>
+                            <div class="col-span-2 text-center">P.U</div>
+                            <div class="col-span-2 text-center">Cant</div>
+                            <div class="col-span-2 text-center">Sub</div>
+                            <div class="col-span-1 text-center">X</div>
+                        </div>
+                        <div id="cart-items-list" class="flex-1 overflow-y-auto divide-y divide-gray-100 text-xs">
+                            <div class="p-6 text-center text-gray-400">Escanee un producto o folio de ticket para empezar</div>
+                        </div>
+                    </div>
+
+                    <!-- Botonera Inferior POS -->
+                    <div class="space-y-2 bg-white p-2.5 sm:p-3 rounded-xl shadow-sm border flex-shrink-0">
+                        <div class="flex justify-between space-x-1.5 sm:space-x-2">
+                            <button onclick="requestAuthForAction('entrada')" class="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 py-2 px-1 rounded-lg font-medium text-[11px] sm:text-xs border border-emerald-200 flex items-center justify-center space-x-1">
+                                <i data-lucide="arrow-down-circle" class="w-3.5 h-3.5 flex-shrink-0"></i><span class="truncate">Entrada</span>
+                            </button>
+                            <button onclick="requestAuthForAction('retiro')" class="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 py-2 px-1 rounded-lg font-medium text-[11px] sm:text-xs border border-amber-200 flex items-center justify-center space-x-1">
+                                <i data-lucide="arrow-up-circle" class="w-3.5 h-3.5 flex-shrink-0"></i><span class="truncate">Voucher</span>
+                            </button>
+                            <button onclick="requestAuthForAction('devolucion')" class="flex-1 bg-purple-50 hover:bg-purple-100 text-purple-700 py-2 px-1 rounded-lg font-medium text-[11px] sm:text-xs border border-purple-200 flex items-center justify-center space-x-1">
+                                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 flex-shrink-0"></i><span class="truncate">Devolución</span>
+                            </button>
+                            <button onclick="cancelSale()" class="bg-red-50 hover:bg-red-100 text-red-600 px-2 py-2 rounded-lg font-semibold text-[11px] sm:text-xs border border-red-200">Cancelar</button>
+                        </div>
+                        <button id="btn-main-action" onclick="handleMainActionButton()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-base shadow-lg transition flex items-center justify-center space-x-2">
+                            <i data-lucide="credit-card" class="w-5 h-5"></i><span>COBRAR / TOTAL</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VISTA 2: BACKOFFICE (PANEL ADMINISTRATIVO) -->
+        <!-- ========================================== -->
+        <div id="view-backoffice" class="hidden flex-1 flex flex-col bg-gray-50 overflow-hidden">
+            <!-- Subnavegación Backoffice -->
+            <nav class="bg-white shadow px-3 py-2 flex space-x-2 border-b overflow-x-auto flex-shrink-0">
+                <button onclick="switchBackofficeTab('inventory')" id="bo-btn-inventory" class="px-3 py-1.5 rounded-lg font-medium text-xs bg-blue-50 text-blue-600 transition flex items-center space-x-1 whitespace-nowrap">
+                    <i data-lucide="package" class="w-4 h-4"></i><span>Inventario</span>
+                </button>
+                <button onclick="switchBackofficeTab('history')" id="bo-btn-history" class="px-3 py-1.5 rounded-lg font-medium text-xs text-gray-600 hover:bg-gray-100 transition flex items-center space-x-1 whitespace-nowrap">
+                    <i data-lucide="history" class="w-4 h-4"></i><span>Historial</span>
+                </button>
+                <button onclick="switchBackofficeTab('cuts')" id="bo-btn-cuts" class="px-3 py-1.5 rounded-lg font-medium text-xs text-gray-600 hover:bg-gray-100 transition flex items-center space-x-1 whitespace-nowrap">
+                    <i data-lucide="file-text" class="w-4 h-4"></i><span>Cortes</span>
+                </button>
+                <button onclick="switchBackofficeTab('operators')" id="bo-btn-operators" class="px-3 py-1.5 rounded-lg font-medium text-xs text-gray-600 hover:bg-gray-100 transition flex items-center space-x-1 whitespace-nowrap">
+                    <i data-lucide="users" class="w-4 h-4"></i><span>Operadores</span>
+                </button>
+                <button onclick="switchBackofficeTab('reports')" id="bo-btn-reports" class="px-3 py-1.5 rounded-lg font-medium text-xs text-gray-600 hover:bg-gray-100 transition flex items-center space-x-1 whitespace-nowrap">
+                    <i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>Reportes Sucursal</span>
+                </button>
+                <button onclick="switchBackofficeTab('settings')" id="bo-btn-settings" class="px-3 py-1.5 rounded-lg font-medium text-xs text-gray-600 hover:bg-gray-100 transition flex items-center space-x-1 whitespace-nowrap">
+                    <i data-lucide="settings" class="w-4 h-4"></i><span>Ajustes Ticket / Sucursal</span>
+                </button>
+            </nav>
+
+            <!-- Contenido Backoffice -->
+            <main class="flex-1 overflow-y-auto p-3 sm:p-4 bg-gray-50 text-xs">
+
+                <!-- 1. INVENTARIO -->
+                <div id="bo-tab-inventory" class="space-y-3">
+                    <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center bg-white p-3 rounded-xl shadow-sm border gap-2">
+                        <input type="text" id="inventory-search" oninput="filterInventory()" placeholder="Buscar producto..." class="p-2 border rounded-lg w-full sm:w-60 text-xs outline-none">
+                        <div class="flex space-x-2">
+                            <button onclick="exportTableToExcel('inventory-list-table', 'inventario')" class="bg-emerald-600 text-white px-3 py-2 rounded-lg font-medium text-xs flex items-center space-x-1">
+                                <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i><span>Excel</span>
+                            </button>
+                            <button onclick="printSectionReport('Inventario de Productos', 'inventory-list-table')" class="bg-gray-700 text-white px-3 py-2 rounded-lg font-medium text-xs flex items-center space-x-1">
+                                <i data-lucide="printer" class="w-3.5 h-3.5"></i><span>PDF / Imprimir</span>
+                            </button>
+                            <button onclick="openProductModal()" class="bg-blue-600 text-white px-3 py-2 rounded-lg font-medium text-xs flex items-center space-x-1">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>Nuevo</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+                        <div class="bg-gray-100 px-3 py-2 border-b font-semibold text-gray-700 grid grid-cols-12 gap-1">
+                            <div class="col-span-3">Código</div>
+                            <div class="col-span-4">Nombre</div>
+                            <div class="col-span-2 text-center">Precio</div>
+                            <div class="col-span-2 text-center">Stock</div>
+                            <div class="col-span-1 text-center">Acción</div>
+                        </div>
+                        <div id="inventory-list" class="divide-y divide-gray-100"></div>
+                    </div>
+                </div>
+
+                <!-- 2. HISTORIAL DE VENTAS -->
+                <div id="bo-tab-history" class="hidden space-y-3">
+                    <div class="flex justify-end space-x-2 bg-white p-3 rounded-xl shadow-sm border">
+                        <button onclick="exportTableToExcel('history-list-table', 'historial_ventas')" class="bg-emerald-600 text-white px-3 py-2 rounded-lg font-medium text-xs flex items-center space-x-1">
+                            <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i><span>Excel</span>
+                        </button>
+                        <button onclick="printSectionReport('Historial de Ventas', 'history-list-table')" class="bg-gray-700 text-white px-3 py-2 rounded-lg font-medium text-xs flex items-center space-x-1">
+                            <i data-lucide="printer" class="w-3.5 h-3.5"></i><span>PDF / Imprimir</span>
+                        </button>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+                        <div class="bg-gray-100 px-3 py-2 border-b font-semibold text-gray-700 grid grid-cols-12 gap-1">
+                            <div class="col-span-3">Ticket</div>
+                            <div class="col-span-3">Fecha</div>
+                            <div class="col-span-2">Cajero</div>
+                            <div class="col-span-2">Método</div>
+                            <div class="col-span-2 text-right">Total</div>
+                        </div>
+                        <div id="history-list" class="divide-y divide-gray-100"></div>
+                    </div>
+                </div>
+
+                <!-- 3. CORTES DE CAJA -->
+                <div id="bo-tab-cuts" class="hidden space-y-3">
+                    <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center bg-white p-3 rounded-xl shadow-sm border gap-2">
+                        <div><h3 class="font-bold text-sm text-gray-800">Corte Z / Turno Activo</h3></div>
+                        <div class="flex space-x-2">
+                            <button onclick="printSectionReport('Historial de Cortes de Caja', 'cuts-history-list')" class="bg-gray-700 text-white px-3 py-2 rounded-lg font-medium text-xs flex items-center space-x-1">
+                                <i data-lucide="printer" class="w-3.5 h-3.5"></i><span>PDF / Imprimir</span>
+                            </button>
+                            <button onclick="requestAuthForAction('corte')" class="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-xs shadow">Realizar Corte Z</button>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border p-4">
+                        <h4 class="font-semibold text-gray-700 mb-2 border-b pb-1">Historial de Cortes Realizados</h4>
+                        <div id="cuts-history-list" class="space-y-2"></div>
+                    </div>
+                </div>
+
+                <!-- 4. OPERADORES Y ROLES -->
+                <div id="bo-tab-operators" class="hidden space-y-4 max-w-xl mx-auto">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border space-y-3">
+                        <h3 class="font-bold text-sm text-gray-800 border-b pb-2 flex items-center space-x-1">
+                            <i data-lucide="user-plus" class="w-4 h-4 text-blue-600"></i><span id="op-form-title">Agregar Nuevo Operador / Rol</span>
+                        </h3>
+                        <input type="hidden" id="edit-op-original-id" value="">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div><label class="block font-medium text-gray-700">Número ID</label><input type="number" id="new-op-id" class="w-full p-2 border rounded-lg mt-1 outline-none" placeholder="Ej. 102"></div>
+                            <div><label class="block font-medium text-gray-700">NIP / Clave</label><input type="password" id="new-op-pin" class="w-full p-2 border rounded-lg mt-1 outline-none" placeholder="****"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div><label class="block font-medium text-gray-700">Nombre</label><input type="text" id="new-op-name" class="w-full p-2 border rounded-lg mt-1 outline-none" placeholder="Ej. Ana Gómez"></div>
+                            <div>
+                                <label class="block font-medium text-gray-700">Puesto / Rol</label>
+                                <select id="new-op-role" class="w-full p-2 border rounded-lg mt-1 outline-none bg-white">
+                                    <option value="Cajero">Cajero</option>
+                                    <option value="Supervisor">Supervisor</option>
+                                    <option value="Subgerente">Subgerente</option>
+                                    <option value="Gerente">Gerente</option>
+                                    <option value="Sistemas">Sistemas</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="saveOperator()" class="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-bold">Guardar Operador</button>
+                            <button onclick="resetOperatorForm()" id="btn-cancel-edit" class="hidden bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-bold">Cancelar</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border space-y-2">
+                        <p class="font-semibold text-gray-700 mb-2">Personal Registrado y Permisos:</p>
+                        <div id="operators-list" class="space-y-1.5"></div>
+                    </div>
+                </div>
+
+                <!-- 5. REPORTES SUCURSAL -->
+                <div id="bo-tab-reports" class="hidden space-y-4 max-w-2xl mx-auto">
+                    <div class="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border">
+                        <h3 class="font-bold text-sm text-gray-800">Reporte General de Sucursal</h3>
+                        <button onclick="printSectionReport('Reporte General de Sucursal', 'bo-tab-reports')" class="bg-gray-700 text-white px-3 py-2 rounded-lg font-medium text-xs flex items-center space-x-1">
+                            <i data-lucide="printer" class="w-3.5 h-3.5"></i><span>Imprimir PDF / Reporte</span>
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-white p-4 rounded-xl shadow-sm border"><p class="text-gray-500">Ventas Totales Sucursal</p><h3 id="rep-total-sales" class="text-xl font-extrabold text-blue-900 mt-1">$0.00</h3></div>
+                        <div class="bg-white p-4 rounded-xl shadow-sm border"><p class="text-gray-500">Transacciones Totales</p><h3 id="rep-total-trans" class="text-xl font-bold text-gray-800 mt-1">0</h3></div>
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-emerald-200 bg-emerald-50/30"><p class="text-emerald-700 font-semibold">Ventas en Efectivo</p><h3 id="rep-cash-sales" class="text-lg font-bold text-emerald-800 mt-1">$0.00</h3></div>
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-blue-200 bg-blue-50/30"><p class="text-blue-700 font-semibold">Ventas con Tarjeta</p><h3 id="rep-card-sales" class="text-lg font-bold text-blue-800 mt-1">$0.00</h3></div>
+                        <div class="bg-white p-4 rounded-xl shadow-sm border col-span-2"><p class="text-gray-500">Efectivo Actual en Caja</p><h3 id="rep-cash-drawer" class="text-xl font-bold text-green-600 mt-1">$0.00</h3></div>
+                    </div>
+                </div>
+
+                <!-- 6. AJUSTES DE TICKET Y SUCURSAL -->
+                <div id="bo-tab-settings" class="hidden space-y-4 max-w-lg mx-auto">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border space-y-3">
+                        <h3 class="font-bold text-sm text-gray-800 border-b pb-2 flex items-center space-x-1">
+                            <i data-lucide="store" class="w-4 h-4 text-blue-600"></i><span>Datos Fiscales y Sucursal para Ticket</span>
+                        </h3>
+                        <div class="space-y-2">
+                            <div><label class="block font-medium text-gray-700">Nombre Comercial / Negocio</label><input type="text" id="cfg-name" class="w-full p-2 border rounded-lg mt-1 outline-none"></div>
+                            <div><label class="block font-medium text-gray-700">RFC</label><input type="text" id="cfg-rfc" class="w-full p-2 border rounded-lg mt-1 outline-none" placeholder="Ej. XAXX010101000"></div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div><label class="block font-medium text-gray-700">Nombre de Sucursal</label><input type="text" id="cfg-branch-name" class="w-full p-2 border rounded-lg mt-1 outline-none" placeholder="Ej. Centro"></div>
+                                <div><label class="block font-medium text-gray-700">Núm. de Sucursal</label><input type="text" id="cfg-branch-num" class="w-full p-2 border rounded-lg mt-1 outline-none" placeholder="Ej. 001"></div>
+                            </div>
+                            <div><label class="block font-medium text-gray-700">Dirección</label><input type="text" id="cfg-address" class="w-full p-2 border rounded-lg mt-1 outline-none"></div>
+                            <div><label class="block font-medium text-gray-700">Mensaje al Pie del Ticket</label><input type="text" id="cfg-footer" class="w-full p-2 border rounded-lg mt-1 outline-none"></div>
+                            <div>
+                                <label class="block font-medium text-gray-700">Logotipo (URL de imagen o Emoji)</label>
+                                <input type="text" id="cfg-logo" class="w-full p-2 border rounded-lg mt-1 outline-none" placeholder="https://tu-imagen.com/logo.png o 🛒">
+                            </div>
+                        </div>
+                        <button onclick="saveBusinessSettings()" class="w-full bg-blue-600 text-white py-2 rounded-lg font-bold">Guardar Ajustes de Sucursal</button>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODALES VARIOS                               -->
+    <!-- ========================================== -->
+
+    <!-- Modal Autorización Superior -->
+    <div id="auth-supervisor-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4">
+            <div class="text-center">
+                <div class="bg-amber-500 text-white p-3 rounded-full inline-block mb-1"><i data-lucide="lock" class="w-6 h-6"></i></div>
+                <h3 class="text-base font-bold text-gray-800">Autorización Requerida</h3>
+                <p id="auth-supervisor-desc" class="text-xs text-gray-500 mt-1">Se requiere Supervisor, Subgerente, Gerente o Sistemas</p>
+            </div>
+            <div class="space-y-3">
+                <div><label class="block text-xs font-medium text-gray-700">ID Autorizador</label><input type="number" id="auth-sup-id" class="w-full mt-1 p-2.5 border rounded-lg text-xs outline-none" placeholder="ID..."></div>
+                <div><label class="block text-xs font-medium text-gray-700">NIP Autorizador</label><input type="password" id="auth-sup-pin" class="w-full mt-1 p-2.5 border rounded-lg text-xs outline-none" placeholder="****"></div>
+            </div>
+            <div class="flex space-x-2 pt-1">
+                <button onclick="document.getElementById('auth-supervisor-modal').classList.add('hidden')" class="flex-1 bg-gray-100 py-2 rounded-lg text-xs font-medium">Cancelar</button>
+                <button onclick="verifySupervisorAuth()" class="flex-1 bg-blue-600 text-white py-2 rounded-lg text-xs font-semibold">Autorizar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Búsqueda Rápida Producto -->
+    <div id="search-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-3">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="text-base font-bold text-gray-800">Buscar Producto</h3>
+                <button onclick="closeSearchModal()" class="text-gray-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <input type="text" id="modal-search-input" oninput="filterModalSearch()" placeholder="Escriba nombre o código..." class="w-full p-2.5 border rounded-lg text-xs outline-none">
+            <div id="modal-search-results" class="max-h-60 overflow-y-auto divide-y divide-gray-100 text-xs"></div>
+        </div>
+    </div>
+
+    <!-- Modal Selección de Tipo de Devolución (Total o Parcial) -->
+    <div id="return-mode-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4">
+            <div class="text-center">
+                <div class="bg-purple-600 text-white p-3 rounded-full inline-block mb-1"><i data-lucide="rotate-ccw" class="w-6 h-6"></i></div>
+                <h3 class="text-base font-bold text-gray-800">Seleccionar Tipo de Devolución</h3>
+                <p id="return-ticket-info" class="text-xs text-gray-500 mt-1">Ticket: T-XXXXX</p>
+            </div>
+            <div class="space-y-2">
+                <button onclick="executeReturnMode('total')" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-xl font-bold text-sm shadow transition flex items-center justify-center space-x-2">
+                    <i data-lucide="check-circle" class="w-4 h-4"></i><span>Devolución Total (Todo el Ticket)</span>
+                </button>
+                <button onclick="executeReturnMode('parcial')" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 rounded-xl font-bold text-sm transition flex items-center justify-center space-x-2">
+                    <i data-lucide="list-filter" class="w-4 h-4"></i><span>Devolución Parcial (Elegir Artículos)</span>
+                </button>
+            </div>
+            <button onclick="document.getElementById('return-mode-modal').classList.add('hidden')" class="w-full bg-gray-50 py-2 rounded-lg text-xs font-medium text-gray-600">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- Modal Cobro / Reembolso -->
+    <div id="checkout-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 id="modal-checkout-title" class="text-lg font-bold text-gray-800">Cobrar Venta</h3>
+                <button onclick="closeCheckoutModal()" class="text-gray-400"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <div id="modal-display-box" class="bg-blue-50 p-3 rounded-xl text-center">
+                <p id="modal-amount-label" class="text-xs text-blue-600 font-medium">Total a Pagar</p>
+                <h2 id="modal-total-display" class="text-3xl font-extrabold text-blue-900 mt-1">$0.00</h2>
+            </div>
+            <div class="flex space-x-2 border-b pb-3">
+                <button onclick="setPaymentMethod('efectivo')" id="pay-method-efectivo" class="flex-1 py-2 rounded-lg text-sm font-semibold border bg-blue-600 text-white transition">Efectivo</button>
+                <button onclick="setPaymentMethod('tarjeta')" id="pay-method-tarjeta" class="flex-1 py-2 rounded-lg text-sm font-semibold border bg-gray-100 text-gray-700 transition">Tarjeta</button>
+            </div>
+            <div id="cash-payment-section" class="space-y-3">
+                <div><label id="cash-received-label" class="block text-xs font-medium text-gray-700">Efectivo Recibido ($)</label><input type="number" id="cash-received" oninput="calculateChange()" class="w-full mt-1 p-2.5 border rounded-xl text-lg font-bold outline-none" placeholder="0.00"></div>
+                <div class="bg-gray-50 p-3 rounded-xl flex justify-between items-center"><span id="change-title-label" class="text-xs font-semibold text-gray-700">Cambio:</span><span id="cash-change" class="text-xl font-extrabold text-green-600">$0.00</span></div>
+            </div>
+            <button id="btn-confirm-checkout" onclick="completeSale()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-base shadow-lg transition">CONFIRMAR Y COBRAR</button>
+        </div>
+    </div>
+
+    <!-- Modal Corte Z -->
+    <div id="close-register-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-3">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="text-lg font-bold text-gray-800">Corte Z / Cierre de Caja</h3>
+                <button onclick="document.getElementById('close-register-modal').classList.add('hidden')" class="text-gray-400"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <div class="space-y-1.5 text-xs bg-gray-50 p-3 rounded-xl">
+                <div class="flex justify-between"><span>Fondo Inicial:</span> <span id="cr-fondo" class="font-semibold">$0.00</span></div>
+                <div class="flex justify-between"><span>Ventas Efectivo:</span> <span id="cr-ventas" class="font-semibold">$0.00</span></div>
+                <div class="flex justify-between"><span>Ventas Tarjeta:</span> <span id="cr-tarjeta-ventas" class="font-semibold text-blue-600">$0.00</span></div>
+                <div class="flex justify-between"><span>Devoluciones:</span> <span id="cr-devoluciones" class="font-semibold text-purple-600">$0.00</span></div>
+                <div class="flex justify-between"><span>Entradas:</span> <span id="cr-entradas" class="font-semibold">$0.00</span></div>
+                <div class="flex justify-between"><span>Retiros / Vouchers:</span> <span id="cr-retiros" class="font-semibold text-red-600">$0.00</span></div>
+                <div class="border-t pt-1 flex justify-between font-bold text-sm"><span>Efectivo Teórico:</span> <span id="cr-teorico" class="text-blue-600">$0.00</span></div>
+            </div>
+            <div><label class="block text-xs font-medium text-gray-700">Efectivo Físico Contado ($)</label><input type="number" step="0.01" id="cr-counted" oninput="calculateRegisterDiff()" class="w-full mt-1 p-2.5 border rounded-xl text-lg font-bold outline-none" placeholder="0.00"></div>
+            <div class="bg-blue-50 p-2.5 rounded-xl flex justify-between items-center text-xs"><span class="font-semibold text-gray-700">Diferencia:</span><span id="cr-diff" class="text-base font-bold text-gray-800">$0.00</span></div>
+            <button onclick="executeCloseRegister()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm shadow transition">REALIZAR CORTE Z E IMPRIMIR</button>
+        </div>
+    </div>
+
+    <!-- Modal Movimiento de Caja / Voucher de Tarjeta -->
+    <div id="cash-movement-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-3">
+            <h3 id="cm-title" class="text-base font-bold text-gray-800">Movimiento de Caja</h3>
+            <div><label class="block text-xs font-medium text-gray-700">Monto ($)</label><input type="number" step="0.01" id="cm-amount" class="w-full mt-1 p-2.5 border rounded-lg text-base font-bold outline-none" placeholder="0.00"></div>
+            <div><label class="block text-xs font-medium text-gray-700">Motivo / Folio Voucher de Terminal</label><input type="text" id="cm-reason" class="w-full mt-1 p-2.5 border rounded-lg text-xs outline-none" placeholder="Ej. Voucher Tarjeta #4582 o Retiro caja"></div>
+            <div class="flex space-x-2 pt-1">
+                <button onclick="document.getElementById('cash-movement-modal').classList.add('hidden')" class="flex-1 bg-gray-100 py-2 rounded-lg text-xs font-medium">Cancelar</button>
+                <button onclick="saveCashMovement()" class="flex-1 bg-blue-600 text-white py-2 rounded-lg text-xs font-semibold">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Producto (Nuevo/Editar) -->
+    <div id="product-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-3 text-xs">
+            <h3 id="prod-modal-title" class="text-base font-bold text-gray-800">Nuevo Producto</h3>
+            <input type="hidden" id="edit-prod-id" value="">
+            <div><label class="block font-medium text-gray-700">Código</label><input type="text" id="prod-code" class="w-full mt-1 p-2 border rounded-lg outline-none"></div>
+            <div><label class="block font-medium text-gray-700">Nombre</label><input type="text" id="prod-name" class="w-full mt-1 p-2 border rounded-lg outline-none"></div>
+            <div class="grid grid-cols-2 gap-2">
+                <div><label class="block font-medium text-gray-700">Precio ($)</label><input type="number" step="0.01" id="prod-price" class="w-full mt-1 p-2 border rounded-lg outline-none"></div>
+                <div><label class="block font-medium text-gray-700">Stock</label><input type="number" id="prod-stock" class="w-full mt-1 p-2 border rounded-lg outline-none"></div>
+            </div>
+            <div class="flex space-x-2 pt-2">
+                <button onclick="document.getElementById('product-modal').classList.add('hidden')" class="flex-1 bg-gray-100 py-2 rounded-lg font-medium">Cancelar</button>
+                <button onclick="saveProduct()" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Área de Impresión Térmica -->
+    <div id="print-ticket-area" class="hidden print:block fixed inset-0 bg-white p-2 font-mono text-xs text-black z-50"></div>
+
+    <!-- ========================================== -->
+    <!-- JAVASCRIPT LOGIC                           -->
+    <!-- ========================================== -->
+    <script>
+        let businessSettings = JSON.parse(localStorage.getItem('pos_settings')) || {
+            name: "MiPos Express",
+            rfc: "XAXX010101000",
+            branchName: "Principal",
+            branchNum: "001",
+            address: "Av. Principal #123, Col. Centro",
+            footer: "¡Gracias por su compra!",
+            logo: "🛒"
+        };
+
+        let operators = JSON.parse(localStorage.getItem('pos_operators')) || [
+            { id: 101, pin: "1234", name: "Juan Cajero", role: "Cajero" },
+            { id: 201, pin: "2222", name: "Carlos Sistemas", role: "Sistemas" },
+            { id: 202, pin: "3333", name: "Sofía Gerente", role: "Gerente" },
+            { id: 203, pin: "4444", name: "Luis Supervisor", role: "Supervisor" }
+        ];
+
+        let activeShift = JSON.parse(localStorage.getItem('pos_active_shift')) || {
+            operator: null,
+            fondoInicial: 0,
+            sales: [],
+            returns: [],
+            cashMovements: []
+        };
+
+        let state = {
+            cart: [],
+            paymentMethod: 'efectivo',
+            mode: 'venta', // 'venta' o 'devolucion'
+            currentReturnTicket: null,
+            products: JSON.parse(localStorage.getItem('pos_products')) || [
+                { id: 1, code: "7501001", name: "Coca Cola 600ml", price: 20.00, stock: 45 },
+                { id: 2, code: "7501002", name: "Sabritas Sal 170g", price: 35.00, stock: 20 },
+                { id: 3, code: "7501003", name: "Leche Lala 1L", price: 28.50, stock: 15 },
+                { id: 4, code: "7501004", name: "Pan Bimbo Blanco", price: 42.00, stock: 10 }
+            ],
+            historySales: JSON.parse(localStorage.getItem('pos_history_sales')) || [],
+            cuts: JSON.parse(localStorage.getItem('pos_cuts')) || []
+        };
+
+        let pendingActionType = null;
+        let currentMovementType = 'entrada';
+
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            applyBusinessBranding();
+            checkSession();
+        });
+
+        function applyBusinessBranding() {
+            document.getElementById('login-business-title').innerText = businessSettings.name;
+            document.getElementById('header-business-name').innerText = businessSettings.name;
+            const logoContainer = document.getElementById('header-logo-container');
+            if (businessSettings.logo && (businessSettings.logo.startsWith('http') || businessSettings.logo.startsWith('data:'))) {
+                logoContainer.innerHTML = `<img src="${businessSettings.logo}" class="w-full h-full object-cover">`;
+            } else {
+                logoContainer.innerHTML = `<span class="text-base">${businessSettings.logo || '🛒'}</span>`;
+            }
+        }
+
+        function checkSession() {
+            if (activeShift.operator) {
+                document.getElementById('auth-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                document.getElementById('header-op-name').innerText = `Op: ${activeShift.operator.name}`;
+                document.getElementById('header-op-role').innerText = activeShift.operator.role;
+                document.getElementById('header-fondo').innerText = activeShift.fondoInicial.toFixed(2);
+                switchMainView('pos');
+            } else {
+                document.getElementById('auth-screen').classList.remove('hidden');
+                document.getElementById('main-app').classList.add('hidden');
+            }
+        }
+
+        function loginAndOpenDrawer() {
+            const opId = parseInt(document.getElementById('login-op-id').value);
+            const opPin = document.getElementById('login-op-pin').value;
+            const fondoInput = parseFloat(document.getElementById('login-cash-drawer').value);
+
+            const found = operators.find(o => o.id === opId && o.pin === opPin);
+            if (!found) { alert('Número de operador o NIP incorrecto.'); return; }
+
+            if (!activeShift.operator) {
+                if (isNaN(fondoInput) || fondoInput < 0) { alert('Ingrese un fondo inicial válido.'); return; }
+                activeShift.operator = found;
+                activeShift.fondoInicial = fondoInput;
+            } else {
+                if (activeShift.operator.id !== found.id) {
+                    alert('Hay un turno abierto con otro operador. Se requiere autorización o corte previo.');
+                    return;
+                }
+            }
+
+            localStorage.setItem('pos_active_shift', JSON.stringify(activeShift));
+            checkSession();
+        }
+
+        function logout() {
+            if (confirm('¿Desea cerrar sesión temporalmente? (El dinero y ventas del turno actual se conservarán)')) {
+                activeShift.operator = null;
+                checkSession();
+            }
+        }
+
+        function switchMainView(view) {
+            if (view === 'pos') {
+                document.getElementById('view-pos').classList.remove('hidden');
+                document.getElementById('view-backoffice').classList.add('hidden');
+                setTimeout(() => document.getElementById('barcode-input').focus(), 100);
+            } else {
+                if (activeShift.operator && activeShift.operator.role === 'Cajero') {
+                    pendingActionType = 'backoffice';
+                    document.getElementById('auth-sup-id').value = '';
+                    document.getElementById('auth-sup-pin').value = '';
+                    document.getElementById('auth-supervisor-desc').innerText = 'Backoffice requiere rol Supervisor, Gerente, Subgerente o Sistemas';
+                    document.getElementById('auth-supervisor-modal').classList.remove('hidden');
+                    return;
+                }
+                document.getElementById('view-pos').classList.add('hidden');
+                document.getElementById('view-backoffice').classList.remove('hidden');
+                switchBackofficeTab('inventory');
+            }
+            lucide.createIcons();
+        }
+
+        function switchBackofficeTab(tab) {
+            ['inventory', 'history', 'cuts', 'operators', 'reports', 'settings'].forEach(t => {
+                document.getElementById(`bo-tab-${t}`).classList.add('hidden');
+                const btn = document.getElementById(`bo-btn-${t}`);
+                if(btn) btn.className = "px-3 py-1.5 rounded-lg font-medium text-xs text-gray-600 hover:bg-gray-100 transition flex items-center space-x-1 whitespace-nowrap";
+            });
+            document.getElementById(`bo-tab-${tab}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`bo-btn-${tab}`);
+            if(activeBtn) activeBtn.className = "px-3 py-1.5 rounded-lg font-medium text-xs bg-blue-50 text-blue-600 transition flex items-center space-x-1 whitespace-nowrap";
+            
+            if (tab === 'inventory') renderInventory();
+            if (tab === 'history') renderHistory();
+            if (tab === 'cuts') renderCutsHistory();
+            if (tab === 'operators') renderOperatorsList();
+            if (tab === 'reports') renderReports();
+            if (tab === 'settings') loadSettingsUI();
+            lucide.createIcons();
+        }
+
+        function requestAuthForAction(actionType) {
+            pendingActionType = actionType;
+            if (activeShift.operator && ['Supervisor', 'Subgerente', 'Gerente', 'Sistemas'].includes(activeShift.operator.role)) {
+                executeAuthorizedAction();
+                return;
+            }
+
+            document.getElementById('auth-sup-id').value = '';
+            document.getElementById('auth-sup-pin').value = '';
+            let desc = 'Entradas y Retiros requieren autorización superior';
+            if (actionType === 'corte') desc = 'Corte Z requiere autorización superior';
+            if (actionType === 'devolucion') desc = 'Realizar devoluciones requiere autorización de Supervisor';
+            document.getElementById('auth-supervisor-desc').innerText = desc;
+            document.getElementById('auth-supervisor-modal').classList.remove('hidden');
+        }
+
+        function verifySupervisorAuth() {
+            const supId = parseInt(document.getElementById('auth-sup-id').value);
+            const supPin = document.getElementById('auth-sup-pin').value;
+
+            const found = operators.find(o => o.id === supId && o.pin === supPin);
+            if (!found) { alert('ID o NIP de autorización incorrecto.'); return; }
+
+            if (pendingActionType === 'backoffice') {
+                const allowed = ['Supervisor', 'Subgerente', 'Gerente', 'Sistemas'];
+                if (!allowed.includes(found.role)) {
+                    alert('El operador no cuenta con permisos para acceder al Backoffice.');
+                    return;
+                }
+                document.getElementById('auth-supervisor-modal').classList.add('hidden');
+                document.getElementById('view-pos').classList.add('hidden');
+                document.getElementById('view-backoffice').classList.remove('hidden');
+                switchBackofficeTab('inventory');
+                return;
+            }
+
+            const allowedRoles = ['Supervisor', 'Subgerente', 'Gerente', 'Sistemas'];
+            if (!allowedRoles.includes(found.role)) {
+                alert(`El operador ${found.name} tiene rol de [${found.role}]. No cuenta con permisos.`);
+                return;
+            }
+
+            document.getElementById('auth-supervisor-modal').classList.add('hidden');
+            executeAuthorizedAction();
+        }
+
+        function executeAuthorizedAction() {
+            if (pendingActionType === 'entrada') {
+                openCashMovementModal('entrada');
+            } else if (pendingActionType === 'retiro') {
+                openCashMovementModal('retiro');
+            } else if (pendingActionType === 'corte') {
+                openCloseRegisterModal();
+            } else if (pendingActionType === 'devolucion') {
+                initReturnModePrompt();
+            }
+        }
+
+        function handleMainActionButton() {
+            openCheckoutModal();
+        }
+
+        // POS LOGIC Y DEVOLUCIONES CORREGIDAS
+        function handleBarcode(e) {
+            if (e.key === 'Enter') {
+                const inputVal = e.target.value.trim();
+                e.target.value = '';
+
+                if (!inputVal) return;
+
+                if (state.mode === 'venta') {
+                    const ticketFound = state.historySales.find(s => s.id.toLowerCase() === inputVal.toLowerCase());
+                    if (ticketFound) {
+                        processTicketForReturn(ticketFound);
+                        return;
+                    }
+
+                    const prod = state.products.find(p => String(p.code) === String(inputVal));
+                    if (prod) {
+                        addToCart(prod);
+                    } else {
+                        alert('Código no reconocido o ticket no encontrado: ' + inputVal);
+                    }
+                    return;
+                }
+
+                if (state.mode === 'devolucion') {
+                    if (!state.currentReturnTicket || !state.currentReturnTicket.items) {
+                        alert('No hay un ticket válido seleccionado para devolución.');
+                        return;
+                    }
+
+                    const originalItem = state.currentReturnTicket.items.find(i => String(i.code) === String(inputVal) || String(i.id) === String(inputVal));
+                    
+                    if (!originalItem) {
+                        alert(`El producto con código [${inputVal}] NO pertenece al ticket ${state.currentReturnTicket.id}.`);
+                        return;
+                    }
+
+                    const existingInCart = state.cart.find(item => String(item.code) === String(originalItem.code) || String(item.id) === String(originalItem.id));
+                    const currentQtyInCart = existingInCart ? existingInCart.qty : 0;
+
+                    if (currentQtyInCart < originalItem.qty) {
+                        if (existingInCart) {
+                            existingInCart.qty++;
+                        } else {
+                            state.cart.push({ ...originalItem, qty: 1 });
+                        }
+                        updateCartUI();
+                    } else {
+                        alert(`No se puede devolver más cantidad de [${originalItem.name}] de la comprada (${originalItem.qty} pzas).`);
+                    }
+                }
+            }
+        }
+
+        function initReturnModePrompt() {
+            const ticketIdInput = prompt("Ingrese o escanee el número de Folio del Ticket a devolver (Ej. T-XXXXXX):");
+            if (!ticketIdInput) return;
+
+            const ticketFound = state.historySales.find(s => s.id.toLowerCase() === ticketIdInput.trim().toLowerCase());
+            if (!ticketFound) {
+                alert('No se encontró ningún ticket registrado con el folio: ' + ticketIdInput);
+                return;
+            }
+
+            state.currentReturnTicket = ticketFound;
+            document.getElementById('return-ticket-info').innerText = `Ticket: ${ticketFound.id} | Total: $${ticketFound.total.toFixed(2)}`;
+            document.getElementById('return-mode-modal').classList.remove('hidden');
+        }
+
+        function executeReturnMode(modeType) {
+            document.getElementById('return-mode-modal').classList.add('hidden');
+            state.mode = 'devolucion';
+            state.cart = [];
+
+            const headerBox = document.getElementById('pos-display-header');
+            const titleBox = document.getElementById('pos-display-title');
+            const mainActionBtn = document.getElementById('btn-main-action');
+
+            headerBox.className = "bg-purple-900 text-white p-2.5 sm:p-3 rounded-xl shadow-sm flex justify-between items-center flex-shrink-0";
+            titleBox.innerText = `DEVOLUCIÓN (${state.currentReturnTicket.id})`;
+            mainActionBtn.innerHTML = `<i data-lucide="rotate-ccw" class="w-5 h-5"></i><span>PROCESAR REEMBOLSO</span>`;
+
+            if (modeType === 'total') {
+                state.currentReturnTicket.items.forEach(item => {
+                    state.cart.push({ ...item });
+                });
+                updateCartUI();
+            } else {
+                updateCartUI();
+            }
+        }
+
+        function processTicketForReturn(ticket) {
+            state.currentReturnTicket = ticket;
+            document.getElementById('return-ticket-info').innerText = `Ticket: ${ticket.id} | Total: $${ticket.total.toFixed(2)}`;
+            document.getElementById('return-mode-modal').classList.remove('hidden');
+        }
+
+        function addToCart(product) {
+            if (state.mode === 'devolucion') return;
+
+            const existing = state.cart.find(item => item.id === product.id);
+            if (existing) {
+                if (existing.qty < product.stock) existing.qty++;
+                else alert('Stock insuficiente.');
+            } else {
+                if (product.stock > 0) state.cart.push({ ...product, qty: 1 });
+                else alert('Producto agotado.');
+            }
+            updateCartUI();
+        }
+
+        function updateCartUI() {
+            const list = document.getElementById('cart-items-list');
+            list.innerHTML = '';
+            let total = 0;
+
+            if (state.cart.length === 0) {
+                let msg = state.mode === 'devolucion' ? 'Escanee los productos del ticket a devolver...' : 'Escanee un producto para empezar';
+                list.innerHTML = `<div class="p-6 text-center text-gray-400">${msg}</div>`;
+                document.getElementById('display-total').innerText = '$0.00';
+                return;
+            }
+
+            state.cart.forEach((item, idx) => {
+                const sub = item.price * item.qty;
+                total += sub;
+                list.innerHTML += `
+                    <div class="px-3 py-2 grid grid-cols-12 gap-1 items-center">
+                        <div class="col-span-5 font-medium text-gray-800 truncate">${item.name}</div>
+                        <div class="col-span-2 text-center text-gray-600">$${item.price.toFixed(2)}</div>
+                        <div class="col-span-2 text-center flex justify-center items-center space-x-1">
+                            <span>${item.qty}</span>
+                        </div>
+                        <div class="col-span-2 text-center font-bold text-gray-800">$${sub.toFixed(2)}</div>
+                        <div class="col-span-1 text-center"><button onclick="removeFromCart(${idx})" class="text-red-500"><i data-lucide="trash-2" class="w-3.5 h-3.5 inline"></i></button></div>
+                    </div>
+                `;
+            });
+            document.getElementById('display-total').innerText = `$${total.toFixed(2)}`;
+            lucide.createIcons();
+        }
+
+        function removeFromCart(idx) { 
+            state.cart.splice(idx, 1); 
+            updateCartUI(); 
+        }
+        
+        function cancelSale() { 
+            if (state.cart.length > 0 || state.mode === 'devolucion') {
+                if (confirm('¿Cancelar operación actual?')) { 
+                    resetPosMode();
+                }
+            } else {
+                alert('No hay ninguna venta o devolución en curso.');
+            }
+        }
+
+        function resetPosMode() {
+            state.cart = [];
+            state.mode = 'venta';
+            state.currentReturnTicket = null;
+            const headerBox = document.getElementById('pos-display-header');
+            const titleBox = document.getElementById('pos-display-title');
+            const mainActionBtn = document.getElementById('btn-main-action');
+
+            headerBox.className = "bg-blue-900 text-white p-2.5 sm:p-3 rounded-xl shadow-sm flex justify-between items-center flex-shrink-0";
+            titleBox.innerText = "Total a Pagar";
+            mainActionBtn.innerHTML = `<i data-lucide="credit-card" class="w-5 h-5"></i><span>COBRAR / TOTAL</span>`;
+            updateCartUI();
+        }
+
+        function openSearchModal() {
+            document.getElementById('modal-search-input').value = '';
+            filterModalSearch();
+            document.getElementById('search-modal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('modal-search-input').focus(), 100);
+        }
+        function closeSearchModal() { document.getElementById('search-modal').classList.add('hidden'); }
+
+        function filterModalSearch() {
+            const query = document.getElementById('modal-search-input').value.toLowerCase();
+            const container = document.getElementById('modal-search-results');
+            container.innerHTML = '';
+            const filtered = state.products.filter(p => p.name.toLowerCase().includes(query) || p.code.includes(query));
+            if (filtered.length === 0) { container.innerHTML = `<div class="p-4 text-center text-gray-400">Sin resultados</div>`; return; }
+            filtered.forEach(p => {
+                container.innerHTML += `
+                    <div onclick="selectProductFromSearch(${p.id})" class="p-2.5 hover:bg-blue-50 cursor-pointer flex justify-between items-center transition">
+                        <div><p class="font-bold text-gray-800">${p.name}</p><p class="text-gray-500 font-mono">Cod: ${p.code} | Stock: ${p.stock}</p></div>
+                        <span class="font-extrabold text-blue-600">$${p.price.toFixed(2)}</span>
+                    </div>
+                `;
+            });
+        }
+
+        function selectProductFromSearch(id) {
+            const prod = state.products.find(p => p.id === id);
+            if (prod) { addToCart(prod); closeSearchModal(); document.getElementById('barcode-input').focus(); }
+        }
+
+        function openCheckoutModal() {
+            if (state.cart.length === 0) { alert('No hay artículos en el carrito o en la devolución.'); return; }
+            const total = state.cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+            
+            const modalTitle = document.getElementById('modal-checkout-title');
+            const amountLabel = document.getElementById('modal-amount-label');
+            const displayBox = document.getElementById('modal-display-box');
+            const confirmBtn = document.getElementById('btn-confirm-checkout');
+
+            if (state.mode === 'devolucion') {
+                modalTitle.innerText = "Procesar Reembolso / Devolución";
+                amountLabel.innerText = "Total a Reembolsar";
+                displayBox.className = "bg-purple-50 p-3 rounded-xl text-center border border-purple-200";
+                confirmBtn.className = "w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl text-base shadow-lg transition";
+                confirmBtn.innerText = "CONFIRMAR Y REEMBOLSAR";
+            } else {
+                modalTitle.innerText = "Cobrar Venta";
+                amountLabel.innerText = "Total a Pagar";
+                displayBox.className = "bg-blue-50 p-3 rounded-xl text-center";
+                confirmBtn.className = "w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-base shadow-lg transition";
+                confirmBtn.innerText = "CONFIRMAR Y COBRAR";
+            }
+
+            document.getElementById('modal-total-display').innerText = `$${total.toFixed(2)}`;
+            document.getElementById('cash-received').value = total.toFixed(2);
+            document.getElementById('cash-change').innerText = '$0.00';
+            setPaymentMethod('efectivo');
+            document.getElementById('checkout-modal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('cash-received').focus(), 100);
+        }
+
+        function closeCheckoutModal() { document.getElementById('checkout-modal').classList.add('hidden'); }
+
+        function setPaymentMethod(method) {
+            state.paymentMethod = method;
+            const btnE = document.getElementById('pay-method-efectivo');
+            const btnT = document.getElementById('pay-method-tarjeta');
+            const cashSec = document.getElementById('cash-payment-section');
+            const cashLabel = document.getElementById('cash-received-label');
+            const changeLabel = document.getElementById('change-title-label');
+            const total = state.cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+
+            if (method === 'efectivo') {
+                btnE.className = "flex-1 py-2 rounded-lg text-sm font-semibold border bg-blue-600 text-white transition";
+                btnT.className = "flex-1 py-2 rounded-lg text-sm font-semibold border bg-gray-100 text-gray-700 transition";
+                cashSec.classList.remove('hidden');
+                cashLabel.innerText = state.mode === 'devolucion' ? "Efectivo Entregado al Cliente ($)" : "Efectivo Recibido ($)";
+                changeLabel.innerText = state.mode === 'devolucion' ? "Cambio / Entregado:" : "Cambio:";
+                document.getElementById('cash-received').value = total.toFixed(2);
+                calculateChange();
+            } else {
+                btnT.className = "flex-1 py-2 rounded-lg text-sm font-semibold border bg-blue-600 text-white transition";
+                btnE.className = "flex-1 py-2 rounded-lg text-sm font-semibold border bg-gray-100 text-gray-700 transition";
+                cashSec.classList.add('hidden');
+            }
+        }
+
+        function calculateChange() {
+            const total = state.cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+            const received = parseFloat(document.getElementById('cash-received').value) || 0;
+            const change = received - total;
+            document.getElementById('cash-change').innerText = `$${change >= 0 ? change.toFixed(2) : '0.00'}`;
+        }
+
+        function completeSale() {
+            const total = state.cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+            if (total <= 0) { alert('El total debe ser mayor a cero.'); return; }
+
+            let received = total;
+            let change = 0;
+
+            if (state.paymentMethod === 'efectivo') {
+                received = parseFloat(document.getElementById('cash-received').value) || 0;
+                if (received < total) { alert(state.mode === 'devolucion' ? 'Monto de efectivo insuficiente para reembolso.' : 'Efectivo insuficiente.'); return; }
+                change = received - total;
+            }
+
+            if (state.mode === 'devolucion') {
+                state.cart.forEach(item => {
+                    const p = state.products.find(prod => String(prod.id) === String(item.id) || String(prod.code) === String(item.code));
+                    if (p) p.stock += item.qty;
+                });
+
+                const returnRecord = {
+                    id: 'DEV-' + Math.floor(100000 + Math.random() * 900000),
+                    ticketRef: state.currentReturnTicket ? state.currentReturnTicket.id : 'N/A',
+                    date: new Date().toLocaleString(),
+                    operator: activeShift.operator ? activeShift.operator.name : 'Cajero',
+                    method: state.paymentMethod,
+                    items: [...state.cart],
+                    total: total
+                };
+
+                activeShift.returns.unshift(returnRecord);
+                localStorage.setItem('pos_active_shift', JSON.stringify(activeShift));
+                localStorage.setItem('pos_products', JSON.stringify(state.products));
+
+                // Cierre de modal y reseteo inmediato antes de imprimir para evitar bloqueo en móviles
+                closeCheckoutModal();
+                alert('Devolución procesada y registrada con éxito.');
+                
+                const currentReturn = returnRecord;
+                resetPosMode();
+
+                setTimeout(() => {
+                    printReturnTicket(currentReturn);
+                }, 300);
+
+            } else {
+                state.cart.forEach(item => {
+                    const p = state.products.find(prod => prod.id === item.id);
+                    if (p) p.stock -= item.qty;
+                });
+
+                const saleRecord = {
+                    id: 'T-' + Math.floor(100000 + Math.random() * 900000),
+                    date: new Date().toLocaleString(),
+                    operator: activeShift.operator ? activeShift.operator.name : 'Cajero',
+                    method: state.paymentMethod,
+                    items: [...state.cart],
+                    total: total,
+                    received: received,
+                    change: change
+                };
+
+                activeShift.sales.unshift(saleRecord);
+                state.historySales.unshift(saleRecord);
+
+                localStorage.setItem('pos_active_shift', JSON.stringify(activeShift));
+                localStorage.setItem('pos_history_sales', JSON.stringify(state.historySales));
+                localStorage.setItem('pos_products', JSON.stringify(state.products));
+
+                closeCheckoutModal();
+                
+                const currentSale = saleRecord;
+                state.cart = [];
+                updateCartUI();
+
+                setTimeout(() => {
+                    printSaleTicket(currentSale);
+                }, 300);
+            }
+        }
+
+        // EXPORTACIÓN A EXCEL (CSV) Y PDF
+        function exportTableToExcel(tableId, filename = 'reporte') {
+            let csv = [];
+            if (tableId === 'inventory-list-table') {
+                csv.push("Codigo,Nombre,Precio,Stock");
+                state.products.forEach(p => csv.push(`"${p.code}","${p.name}",${p.price},${p.stock}`));
+            } else if (tableId === 'history-list-table') {
+                csv.push("Ticket,Fecha,Cajero,Metodo,Total");
+                state.historySales.forEach(s => csv.push(`"${s.id}","${s.date}","${s.operator}","${s.method}",${s.total}`));
+            }
+            
+            let csvFile = new Blob([csv.join("\n")], { type: "text/csv;charset=utf-8;" });
+            let downloadLink = document.createElement("a");
+            downloadLink.download = `${filename}_${new Date().toISOString().slice(0,10)}.csv`;
+            downloadLink.href = window.URL.createObjectURL(csvFile);
+            downloadLink.style.display = "none";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        }
+
+        function printSectionReport(title, containerId) {
+            const area = document.getElementById('print-ticket-area');
+            let contentHtml = `<div style="text-align:center; font-weight:bold; font-size:16px;">${businessSettings.name}</div>
+                               <div style="text-align:center; font-size:12px;">RFC: ${businessSettings.rfc} | Sucursal: ${businessSettings.branchName} (${businessSettings.branchNum})</div>
+                               <div style="text-align:center; font-size:11px;">${businessSettings.address}</div>
+                               <div style="text-align:center; font-weight:bold; font-size:14px; margin:10px 0;">REPORTE: ${title.toUpperCase()}</div>
+                               <div style="text-align:center; margin-bottom:10px;">Fecha: ${new Date().toLocaleString()}</div>
+                               <hr style="border-top:1px dashed #000; margin:10px 0;">`;
+
+            if (containerId === 'bo-tab-reports') {
+                const totalSales = activeShift.sales.reduce((acc, s) => acc + s.total, 0);
+                const cashSales = activeShift.sales.filter(s => s.method === 'efectivo').reduce((acc, s) => acc + s.total, 0);
+                const cardSales = activeShift.sales.filter(s => s.method === 'tarjeta').reduce((acc, s) => acc + s.total, 0);
+                const devoluciones = activeShift.returns.reduce((acc, r) => acc + r.total, 0);
+                const entradas = activeShift.cashMovements.filter(m => m.type === 'entrada').reduce((acc, m) => acc + m.amount, 0);
+                const retiros = activeShift.cashMovements.filter(m => m.type === 'retiro').reduce((acc, m) => acc + m.amount, 0);
+                const caja = activeShift.fondoInicial + cashSales - devoluciones + entradas - retiros;
+
+                contentHtml += `<div><b>Ventas Totales Sucursal:</b> $${totalSales.toFixed(2)}</div>
+                                <div><b>Ventas Efectivo:</b> $${cashSales.toFixed(2)}</div>
+                                <div><b>Ventas Tarjeta:</b> $${cardSales.toFixed(2)}</div>
+                                <div><b>Total Devoluciones:</b> $${devoluciones.toFixed(2)}</div>
+                                <div><b>Transacciones:</b> ${activeShift.sales.length}</div>
+                                <div><b>Fondo Inicial:</b> $${activeShift.fondoInicial.toFixed(2)}</div>
+                                <div><b>Efectivo Actual en Caja:</b> $${caja.toFixed(2)}</div>`;
+            } else if (containerId === 'inventory-list-table') {
+                contentHtml += state.products.map(p => `<div>[${p.code}] ${p.name} - $${p.price.toFixed(2)} (Stock: ${p.stock})</div>`).join('');
+            } else if (containerId === 'history-list-table') {
+                contentHtml += state.historySales.map(s => `<div>${s.id} - ${s.date} - $${s.total.toFixed(2)} (${s.method})</div>`).join('');
+            } else {
+                contentHtml += document.getElementById(containerId).innerHTML;
+            }
+
+            area.innerHTML = contentHtml;
+            window.print();
+        }
+
+        // BACKOFFICE MANAGMENT
+        function renderInventory() {
+            const list = document.getElementById('inventory-list');
+            const query = document.getElementById('inventory-search').value.toLowerCase();
+            list.innerHTML = '';
+            const filtered = state.products.filter(p => p.name.toLowerCase().includes(query) || p.code.includes(query));
+            if (filtered.length === 0) { list.innerHTML = `<div class="p-4 text-center text-gray-400">Sin productos</div>`; return; }
+            filtered.forEach(p => {
+                list.innerHTML += `
+                    <div class="px-3 py-2 grid grid-cols-12 gap-1 items-center">
+                        <div class="col-span-3 font-mono text-gray-600 truncate">${p.code}</div>
+                        <div class="col-span-4 font-medium text-gray-800 truncate">${p.name}</div>
+                        <div class="col-span-2 text-center">$${p.price.toFixed(2)}</div>
+                        <div class="col-span-2 text-center font-bold ${p.stock <= 5 ? 'text-red-600' : 'text-gray-800'}">${p.stock}</div>
+                        <div class="col-span-1 text-center flex justify-center space-x-1">
+                            <button onclick="openEditProductModal(${p.id})" class="text-blue-600" title="Editar"><i data-lucide="edit-3" class="w-3.5 h-3.5 inline"></i></button>
+                            <button onclick="deleteProduct(${p.id})" class="text-red-500" title="Eliminar"><i data-lucide="trash-2" class="w-3.5 h-3.5 inline"></i></button>
+                        </div>
+                    </div>
+                `;
+            });
+            lucide.createIcons();
+        }
+
+        function filterInventory() { renderInventory(); }
+
+        function openProductModal() {
+            document.getElementById('prod-modal-title').innerText = "Nuevo Producto";
+            document.getElementById('edit-prod-id').value = "";
+            document.getElementById('prod-code').value = "";
+            document.getElementById('prod-name').value = "";
+            document.getElementById('prod-price').value = "";
+            document.getElementById('prod-stock').value = "";
+            document.getElementById('product-modal').classList.remove('hidden');
+        }
+
+        function openEditProductModal(id) {
+            const p = state.products.find(prod => prod.id === id);
+            if (!p) return;
+            document.getElementById('prod-modal-title').innerText = "Editar Producto";
+            document.getElementById('edit-prod-id').value = p.id;
+            document.getElementById('prod-code').value = p.code;
+            document.getElementById('prod-name').value = p.name;
+            document.getElementById('prod-price').value = p.price;
+            document.getElementById('prod-stock').value = p.stock;
+            document.getElementById('product-modal').classList.remove('hidden');
+        }
+
+        function saveProduct() {
+            const editId = document.getElementById('edit-prod-id').value;
+            const code = document.getElementById('prod-code').value;
+            const name = document.getElementById('prod-name').value;
+            const price = parseFloat(document.getElementById('prod-price').value);
+            const stock = parseInt(document.getElementById('prod-stock').value);
+
+            if (!code || !name || isNaN(price) || isNaN(stock)) { alert('Complete todos los campos.'); return; }
+
+            if (editId) {
+                const p = state.products.find(prod => prod.id == editId);
+                if (p) { p.code = code; p.name = name; p.price = price; p.stock = stock; }
+            } else {
+                const newId = state.products.length ? Math.max(...state.products.map(p => p.id)) + 1 : 1;
+                state.products.push({ id: newId, code, name, price, stock });
+            }
+
+            localStorage.setItem('pos_products', JSON.stringify(state.products));
+            document.getElementById('product-modal').classList.add('hidden');
+            renderInventory();
+            alert('Producto guardado correctamente.');
+        }
+
+        function deleteProduct(id) {
+            if (confirm('¿Eliminar este producto?')) {
+                state.products = state.products.filter(p => p.id !== id);
+                localStorage.setItem('pos_products', JSON.stringify(state.products));
+                renderInventory();
+            }
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            list.innerHTML = '';
+            if (state.historySales.length === 0) { list.innerHTML = `<div class="p-6 text-center text-gray-400">Sin historial de ventas</div>`; return; }
+            state.historySales.forEach(s => {
+                list.innerHTML += `
+                    <div class="px-3 py-2 grid grid-cols-12 gap-1 items-center">
+                        <div class="col-span-3 font-mono font-bold text-blue-600 truncate">${s.id}</div>
+                        <div class="col-span-3 text-gray-600 truncate">${s.date}</div>
+                        <div class="col-span-2 truncate">${s.operator}</div>
+                        <div class="col-span-2 uppercase text-gray-700">${s.method}</div>
+                        <div class="col-span-2 text-right font-bold">$${s.total.toFixed(2)}</div>
+                    </div>
+                `;
+            });
+        }
+
+        function renderOperatorsList() {
+            const container = document.getElementById('operators-list');
+            container.innerHTML = '';
+            operators.forEach(o => {
+                container.innerHTML += `
+                    <div class="flex justify-between items-center p-2 border rounded-lg bg-gray-50">
+                        <div><span class="font-bold">ID: ${o.id}</span> - ${o.name} <span class="text-blue-600 font-semibold">(${o.role})</span></div>
+                        <div class="space-x-2">
+                            <button onclick="editOperator(${o.id})" class="text-blue-600 font-bold">Editar</button>
+                            <button onclick="deleteOperator(${o.id})" class="text-red-500 font-bold">Eliminar</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function saveOperator() {
+            const originalId = document.getElementById('edit-op-original-id').value;
+            const id = parseInt(document.getElementById('new-op-id').value);
+            const pin = document.getElementById('new-op-pin').value;
+            const name = document.getElementById('new-op-name').value;
+            const role = document.getElementById('new-op-role').value;
+
+            if (isNaN(id) || !pin || !name) { alert('Complete todos los campos del operador.'); return; }
+
+            if (originalId) {
+                operators = operators.filter(o => o.id != originalId);
+            }
+
+            if (operators.some(o => o.id === id)) { alert('Ya existe un operador con ese número ID.'); return; }
+
+            operators.push({ id, pin, name, role });
+            localStorage.setItem('pos_operators', JSON.stringify(operators));
+            resetOperatorForm();
+            renderOperatorsList();
+            alert('Operador guardado con éxito.');
+        }
+
+        function editOperator(id) {
+            const op = operators.find(o => o.id === id);
+            if (!op) return;
+            document.getElementById('op-form-title').innerText = "Editar Operador";
+            document.getElementById('edit-op-original-id').value = op.id;
+            document.getElementById('new-op-id').value = op.id;
+            document.getElementById('new-op-pin').value = op.pin;
+            document.getElementById('new-op-name').value = op.name;
+            document.getElementById('new-op-role').value = op.role;
+            document.getElementById('btn-cancel-edit').classList.remove('hidden');
+        }
+
+        function resetOperatorForm() {
+            document.getElementById('op-form-title').innerText = "Agregar Nuevo Operador / Rol";
+            document.getElementById('edit-op-original-id').value = "";
+            document.getElementById('new-op-id').value = "";
+            document.getElementById('new-op-pin').value = "";
+            document.getElementById('new-op-name').value = "";
+            document.getElementById('new-op-role').value = "Cajero";
+            document.getElementById('btn-cancel-edit').classList.add('hidden');
+        }
+
+        function deleteOperator(id) {
+            if (operators.length <= 1) { alert('Debe haber al menos un operador.'); return; }
+            if (confirm('¿Eliminar este operador?')) {
+                operators = operators.filter(o => o.id !== id);
+                localStorage.setItem('pos_operators', JSON.stringify(operators));
+                renderOperatorsList();
+            }
+        }
+
+        function openCashMovementModal(type) {
+            currentMovementType = type;
+            document.getElementById('cm-title').innerText = type === 'entrada' ? 'Entrada de Efectivo' : 'Retiro / Voucher de Tarjeta';
+            document.getElementById('cm-amount').value = '';
+            document.getElementById('cm-reason').value = '';
+            document.getElementById('cash-movement-modal').classList.remove('hidden');
+        }
+
+        function saveCashMovement() {
+            const amount = parseFloat(document.getElementById('cm-amount').value);
+            const reason = document.getElementById('cm-reason').value;
+            if (isNaN(amount) || amount <= 0 || !reason) { alert('Complete los datos y el motivo/folio del voucher.'); return; }
+            
+            const mov = { type: currentMovementType, amount, reason, time: new Date().toLocaleTimeString() };
+            activeShift.cashMovements.push(mov);
+            localStorage.setItem('pos_active_shift', JSON.stringify(activeShift));
+            document.getElementById('cash-movement-modal').classList.add('hidden');
+            printMovementTicket(mov);
+            alert('Movimiento y/o comprobante registrado e impreso con éxito.');
+        }
+
+        // Calcula únicamente el efectivo físico esperado en el cajón.
+        // Las devoluciones a tarjeta no afectan el efectivo de caja.
+        function calculateCashExpected() {
+            const efectivoVentas = activeShift.sales
+                .filter(s => s.method === 'efectivo')
+                .reduce((acc, s) => acc + Number(s.total || 0), 0);
+
+            const devolucionesEfectivo = activeShift.returns
+                .filter(r => r.method === 'efectivo')
+                .reduce((acc, r) => acc + Number(r.total || 0), 0);
+
+            const entradas = activeShift.cashMovements
+                .filter(m => m.type === 'entrada')
+                .reduce((acc, m) => acc + Number(m.amount || 0), 0);
+
+            const retiros = activeShift.cashMovements
+                .filter(m => m.type === 'retiro')
+                .reduce((acc, m) => acc + Number(m.amount || 0), 0);
+
+            return Number(activeShift.fondoInicial || 0)
+                + efectivoVentas
+                - devolucionesEfectivo
+                + entradas
+                - retiros;
+        }
+
+        function openCloseRegisterModal() {
+            const efectivoVentas = activeShift.sales.filter(s => s.method === 'efectivo').reduce((acc, s) => acc + s.total, 0);
+            const tarjetaVentas = activeShift.sales.filter(s => s.method === 'tarjeta').reduce((acc, s) => acc + s.total, 0);
+            const totalDevoluciones = activeShift.returns
+                .reduce((acc, r) => acc + Number(r.total || 0), 0);
+
+            // Importes informativos para mostrarlos en el modal de corte.
+            const entradas = activeShift.cashMovements
+                .filter(m => m.type === 'entrada')
+                .reduce((acc, m) => acc + Number(m.amount || 0), 0);
+
+            const retiros = activeShift.cashMovements
+                .filter(m => m.type === 'retiro')
+                .reduce((acc, m) => acc + Number(m.amount || 0), 0);
+
+            const teorico = calculateCashExpected();
+
+            document.getElementById('cr-fondo').innerText = `$${activeShift.fondoInicial.toFixed(2)}`;
+            document.getElementById('cr-ventas').innerText = `$${efectivoVentas.toFixed(2)}`;
+            document.getElementById('cr-tarjeta-ventas').innerText = `$${tarjetaVentas.toFixed(2)}`;
+            document.getElementById('cr-devoluciones').innerText = `$${totalDevoluciones.toFixed(2)}`;
+            document.getElementById('cr-entradas').innerText = `$${entradas.toFixed(2)}`;
+            document.getElementById('cr-retiros').innerText = `$${retiros.toFixed(2)}`;
+            document.getElementById('cr-teorico').innerText = `$${teorico.toFixed(2)}`;
+            document.getElementById('cr-counted').value = '';
+            document.getElementById('cr-diff').innerText = '$0.00';
+
+            window.teoricoCaja = teorico;
+            document.getElementById('close-register-modal').classList.remove('hidden');
+        }
+
+        function calculateRegisterDiff() {
+            const counted = parseFloat(document.getElementById('cr-counted').value) || 0;
+            const diff = counted - window.teoricoCaja;
+            const diffEl = document.getElementById('cr-diff');
+            diffEl.innerText = `$${diff.toFixed(2)}`;
+            diffEl.className = `text-base font-bold ${diff === 0 ? 'text-green-600' : diff > 0 ? 'text-blue-600' : 'text-red-600'}`;
+        }
+
+        function executeCloseRegister() {
+            const counted = parseFloat(document.getElementById('cr-counted').value);
+            if (isNaN(counted)) { alert('Ingrese el efectivo contado.'); return; }
+            
+            const efectivoVentas = activeShift.sales.filter(s => s.method === 'efectivo').reduce((acc, s) => acc + s.total, 0);
+            const tarjetaVentas = activeShift.sales.filter(s => s.method === 'tarjeta').reduce((acc, s) => acc + s.total, 0);
+            const totalDevoluciones = activeShift.returns.reduce((acc, r) => acc + r.total, 0);
+
+            const cutRecord = {
+                date: new Date().toLocaleString(),
+                operator: activeShift.operator ? activeShift.operator.name : 'Personal',
+                fondo: activeShift.fondoInicial,
+                efectivoVentas,
+                tarjetaVentas,
+                devoluciones: totalDevoluciones,
+                teorico: calculateCashExpected(),
+                contado: counted,
+                diferencia: counted - calculateCashExpected()
+            };
+
+            state.cuts.unshift(cutRecord);
+            localStorage.setItem('pos_cuts', JSON.stringify(state.cuts));
+            localStorage.removeItem('pos_active_shift');
+            document.getElementById('close-register-modal').classList.add('hidden');
+            printCutTicket(cutRecord);
+            alert('Corte Z realizado con éxito. Se reiniciará el turno.');
+            location.reload();
+        }
+
+        function renderCutsHistory() {
+            const list = document.getElementById('cuts-history-list');
+            list.innerHTML = '';
+            if (state.cuts.length === 0) { list.innerHTML = `<p class="text-gray-400">Sin cortes registrados.</p>`; return; }
+            state.cuts.forEach(c => {
+                list.innerHTML += `
+                    <div class="p-2 border rounded-lg flex justify-between items-center">
+                        <div>
+                            <p class="font-bold text-gray-800">${c.operator} - ${c.date}</p>
+                            <p class="text-gray-500">Efec: $${(c.efectivoVentas||0).toFixed(2)} | Dev: $${(c.devoluciones||0).toFixed(2)} | Teórico: $${c.teorico.toFixed(2)} | Contado: $${c.contado.toFixed(2)}</p>
+                        </div>
+                        <span class="font-bold px-2 py-1 rounded ${c.diferencia === 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">$${c.diferencia.toFixed(2)}</span>
+                    </div>
+                `;
+            });
+        }
+
+        function renderReports() {
+            const totalSales = activeShift.sales.reduce((acc, s) => acc + s.total, 0);
+            const cashSales = activeShift.sales.filter(s => s.method === 'efectivo').reduce((acc, s) => acc + s.total, 0);
+            const cardSales = activeShift.sales.filter(s => s.method === 'tarjeta').reduce((acc, s) => acc + s.total, 0);
+            const entradas = activeShift.cashMovements.filter(m => m.type === 'entrada').reduce((acc, m) => acc + m.amount, 0);
+            const retiros = activeShift.cashMovements.filter(m => m.type === 'retiro').reduce((acc, m) => acc + m.amount, 0);
+            const devoluciones = activeShift.returns.reduce((acc, r) => acc + r.total, 0);
+            const efectivoCaja = calculateCashExpected();
+
+            document.getElementById('rep-total-sales').innerText = `$${totalSales.toFixed(2)}`;
+            document.getElementById('rep-total-trans').innerText = activeShift.sales.length;
+            document.getElementById('rep-cash-sales').innerText = `$${cashSales.toFixed(2)}`;
+            document.getElementById('rep-card-sales').innerText = `$${cardSales.toFixed(2)}`;
+            document.getElementById('rep-cash-drawer').innerText = `$${efectivoCaja.toFixed(2)}`;
+        }
+
+        function loadSettingsUI() {
+            document.getElementById('cfg-name').value = businessSettings.name;
+            document.getElementById('cfg-rfc').value = businessSettings.rfc || '';
+            document.getElementById('cfg-branch-name').value = businessSettings.branchName || '';
+            document.getElementById('cfg-branch-num').value = businessSettings.branchNum || '';
+            document.getElementById('cfg-address').value = businessSettings.address;
+            document.getElementById('cfg-footer').value = businessSettings.footer;
+            document.getElementById('cfg-logo').value = businessSettings.logo;
+        }
+
+        function saveBusinessSettings() {
+            businessSettings.name = document.getElementById('cfg-name').value || 'MiPos Express';
+            businessSettings.rfc = document.getElementById('cfg-rfc').value || 'XAXX010101000';
+            businessSettings.branchName = document.getElementById('cfg-branch-name').value || 'Principal';
+            businessSettings.branchNum = document.getElementById('cfg-branch-num').value || '001';
+            businessSettings.address = document.getElementById('cfg-address').value || '';
+            businessSettings.footer = document.getElementById('cfg-footer').value || '¡Gracias por su compra!';
+            businessSettings.logo = document.getElementById('cfg-logo').value || '🛒';
+
+            localStorage.setItem('pos_settings', JSON.stringify(businessSettings));
+            applyBusinessBranding();
+            alert('Datos del negocio y ticket guardados correctamente.');
+        }
+
+        // TICKET DE VENTA (ESTILO WALMART CON BARRAS CENTRADAS)
+        function printSaleTicket(sale) {
+            const area = document.getElementById('print-ticket-area');
+            let itemsHtml = sale.items.map(i => `
+                <div style="margin-bottom: 4px;">
+                    <div style="font-weight: bold;">${i.name}</div>
+                    <div style="display: flex; justify-content: space-between; padding-left: 10px;">
+                        <span>${i.code} &nbsp; ${i.qty} x $${i.price.toFixed(2)}</span>
+                        <span style="font-weight: bold;">$${(i.price * i.qty).toFixed(2)}</span>
+                    </div>
+                </div>
+            `).join('');
+
+            area.innerHTML = `
+                <div style="width: 100%; max-width: 280px; margin: 0 auto; font-family: 'Courier New', Courier, monospace; font-size: 11px; color: #000; line-height: 1.3;">
+                    <div style="text-align: center; margin-bottom: 8px;">
+                        ${businessSettings.logo && (businessSettings.logo.startsWith('http') || businessSettings.logo.startsWith('data:')) ? `<img src="${businessSettings.logo}" style="max-height: 45px; margin: 0 auto 4px auto; display: block;">` : `<div style="font-size: 22px; font-weight: bold;">${businessSettings.logo || '🛒'}</div>`}
+                        <div style="font-size: 15px; font-weight: bold; text-transform: uppercase;">${businessSettings.name}</div>
+                        <div>RFC: ${businessSettings.rfc}</div>
+                        <div style="font-weight: bold;">SUCURSAL: ${businessSettings.branchName} (#${businessSettings.branchNum})</div>
+                        <div style="font-size: 10px;">${businessSettings.address}</div>
+                    </div>
+                    <div style="text-align: center; margin: 4px 0;">================================</div>
+                    <div><b>FOLIO:</b> ${sale.id}</div>
+                    <div><b>FECHA:</b> ${sale.date}</div>
+                    <div><b>CAJERO:</b> ${sale.operator}</div>
+                    <div><b>FORMA DE PAGO:</b> ${sale.method.toUpperCase()}</div>
+                    <div style="text-align: center; margin: 4px 0;">================================</div>
+                    <div style="font-weight: bold; margin-bottom: 4px; text-align: center;">DESCRIPCIÓN / IMPORTE</div>
+                    ${itemsHtml}
+                    <div style="text-align: center; margin: 4px 0;">================================</div>
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: bold;">
+                        <span>TOTAL:</span>
+                        <span>$${sale.total.toFixed(2)}</span>
+                    </div>
+                    ${sale.method === 'efectivo' ? `
+                        <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                            <span>SU PAGO:</span>
+                            <span>$${sale.received.toFixed(2)}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                            <span>CAMBIO:</span>
+                            <span>$${sale.change.toFixed(2)}</span>
+                        </div>
+                    ` : ''}
+                    <div style="text-align: center; margin: 4px 0;">--------------------------------</div>
+                    <div style="text-align: center; font-size: 10px; margin-top: 6px;">${businessSettings.footer}</div>
+                    <div style="text-align: center; font-size: 10px; margin-top: 2px;">¡GRACIAS POR SU COMPRA!</div>
+                    <div style="text-align: center; margin-top: 12px; display: flex; justify-content: center;">
+                        <svg id="ticket-barcode-svg"></svg>
+                    </div>
+                </div>
+            `;
+
+            const barcodeVal = sale.id.replace(/-/g, '');
+            try {
+                JsBarcode("#ticket-barcode-svg", barcodeVal, {
+                    format: "CODE128",
+                    width: 1.8,
+                    height: 40,
+                    displayValue: true,
+                    fontSize: 12,
+                    fontOptions: "bold",
+                    margin: 0
+                });
+            } catch (e) {
+                console.error("Error generando código de barras:", e);
+            }
+            window.print();
+        }
+
+        // TICKET DE DEVOLUCIÓN
+        function printReturnTicket(ret) {
+            const area = document.getElementById('print-ticket-area');
+            let itemsHtml = ret.items.map(i => `
+                <div style="margin-bottom: 4px;">
+                    <div style="font-weight: bold;">${i.name}</div>
+                    <div style="display: flex; justify-content: space-between; padding-left: 10px;">
+                        <span>${i.code} &nbsp; ${i.qty} x $${i.price.toFixed(2)}</span>
+                        <span style="font-weight: bold;">$${(i.price * i.qty).toFixed(2)}</span>
+                    </div>
+                </div>
+            `).join('');
+
+            area.innerHTML = `
+                <div style="width: 100%; max-width: 280px; margin: 0 auto; font-family: 'Courier New', Courier, monospace; font-size: 11px; color: #000; line-height: 1.3;">
+                    <div style="text-align: center; margin-bottom: 8px;">
+                        <div style="font-size: 15px; font-weight: bold; text-transform: uppercase;">${businessSettings.name}</div>
+                        <div>RFC: ${businessSettings.rfc}</div>
+                        <div style="font-weight: bold;">SUCURSAL: ${businessSettings.branchName} (#${businessSettings.branchNum})</div>
+                        <div style="font-size: 12px; font-weight: bold; margin-top: 4px;">COMPROBANTE DE DEVOLUCIÓN</div>
+                    </div>
+                    <div style="text-align: center; margin: 4px 0;">================================</div>
+                    <div><b>DEV FOLIO:</b> ${ret.id}</div>
+                    <div><b>TICKET REF:</b> ${ret.ticketRef}</div>
+                    <div><b>FECHA:</b> ${ret.date}</div>
+                    <div><b>CAJERO:</b> ${ret.operator}</div>
+                    <div><b>REEMBOLSO VÍA:</b> ${ret.method.toUpperCase()}</div>
+                    <div style="text-align: center; margin: 4px 0;">================================</div>
+                    <div style="font-weight: bold; margin-bottom: 4px; text-align: center;">ARTÍCULOS DEVUELTOS</div>
+                    ${itemsHtml}
+                    <div style="text-align: center; margin: 4px 0;">================================</div>
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: bold;">
+                        <span>TOTAL REEMBOLSADO:</span>
+                        <span>$${ret.total.toFixed(2)}</span>
+                    </div>
+                    <div style="text-align: center; margin-top: 10px; font-size: 10px;">${businessSettings.footer}</div>
+                </div>
+            `;
+            window.print();
+        }
+
+        function printMovementTicket(mov) {
+            const area = document.getElementById('print-ticket-area');
+            area.innerHTML = `
+                <div style="text-align:center; font-weight:bold; font-size:14px;">${businessSettings.name}</div>
+                <div style="text-align:center; font-size:11px;">RFC: ${businessSettings.rfc} - Sucursal: ${businessSettings.branchName} (#${businessSettings.branchNum})</div>
+                <div style="text-align:center; font-size:11px; font-weight: bold; margin-top: 4px;">COMPROBANTE DE CAJA / VOUCHER</div>
+                <div style="text-align:center; margin-bottom:6px;">--------------------------------</div>
+                <div>Tipo: <b>${mov.type.toUpperCase()}</b></div><div>Monto: $${mov.amount.toFixed(2)}</div><div>Motivo / Folio: ${mov.reason}</div><div>Fecha: ${mov.time}</div>
+                <div style="text-align:center; margin-top:10px; font-size:11px;">${businessSettings.footer}</div>
+            `;
+            window.print();
+        }
+
+        function printCutTicket(cut) {
+            const area = document.getElementById('print-ticket-area');
+            area.innerHTML = `
+                <div style="text-align:center; font-weight:bold; font-size:14px;">${businessSettings.name}</div>
+                <div style="text-align:center; font-size:11px;">RFC: ${businessSettings.rfc} | Sucursal: ${businessSettings.branchName} (#${businessSettings.branchNum})</div>
+                <div style="text-align:center; font-size:12px; font-weight:bold; margin-top:4px;">CORTE Z (CIERRE DE CAJA)</div>
+                <div style="text-align:center; margin-bottom:6px;">--------------------------------</div>
+                <div>Fecha: ${cut.date}</div><div>Operador: ${cut.operator}</div>
+                <div style="margin:6px 0;">--------------------------------</div>
+                <div>Fondo Inicial: $${cut.fondo.toFixed(2)}</div>
+                <div>Ventas Efectivo: $${(cut.efectivoVentas||0).toFixed(2)}</div>
+                <div>Ventas Tarjeta: $${(cut.tarjetaVentas||0).toFixed(2)}</div>
+                <div>Devoluciones: $${(cut.devoluciones||0).toFixed(2)}</div>
+                <div>Efectivo Teórico: $${cut.teorico.toFixed(2)}</div>
+                <div>Efectivo Contado: $${cut.contado.toFixed(2)}</div>
+                <div style="font-weight:bold; margin-top:4px;">Diferencia: $${cut.diferencia.toFixed(2)}</div>
+                <div style="text-align:center; margin-top:10px; font-size:11px;">${businessSettings.footer}</div>
+            `;
+            window.print();
+        }
+    </script>
+</body>
+</html>
